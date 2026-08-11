@@ -1,0 +1,60 @@
+{
+	"name": "threejs-cinematic-world-zoom",
+	"private": true,
+	"version": "1.0.0",
+	"packageManager": "pnpm@10.33.0",
+	"type": "module",
+	"description": "Fly from orbit to anywhere on Earth on Google's photorealistic 3D tiles, and record it to MP4.",
+	"license": "MIT",
+	"author": "David Ronai (@makio64)",
+	"homepage": "https://github.com/Makio64/threejs-cinematic-world-zoom",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Makio64/threejs-cinematic-world-zoom.git"
+	},
+	"bugs": {
+		"url": "https://github.com/Makio64/threejs-cinematic-world-zoom/issues"
+	},
+	"keywords": [
+		"threejs",
+		"3d-tiles",
+		"photorealistic-3d-tiles",
+		"google-maps",
+		"cesium-ion",
+		"atmosphere",
+		"volumetric-clouds",
+		"camera",
+		"cinematic",
+		"webcodecs",
+		"webgl"
+	],
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"scripts": {
+		"assets": "node scripts/copy-assets.mjs",
+		"dev": "node scripts/copy-assets.mjs && vite",
+		"build": "node scripts/copy-assets.mjs && vite build && node scripts/package-licenses.mjs",
+		"build:with-credentials": "node scripts/copy-assets.mjs && vite build --mode embed-tile-credentials && node scripts/package-licenses.mjs",
+		"preview": "vite preview --host",
+		"postinstall": "node scripts/copy-assets.mjs"
+	},
+	"dependencies": {
+		"3d-tiles-renderer": "0.5.0",
+		"@takram/three-atmosphere": "0.19.1",
+		"@takram/three-clouds": "0.7.6",
+		"@takram/three-geospatial": "0.9.1",
+		"@takram/three-geospatial-effects": "0.6.4",
+		"mediabunny": "1.52.3",
+		"postprocessing": "6.39.4",
+		"three": "0.185.1"
+	},
+	"devDependencies": {
+		"vite": "^8.2.1"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"esbuild"
+		]
+	}
+}

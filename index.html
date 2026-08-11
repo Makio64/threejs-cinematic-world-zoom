@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>Cinematic Zoom</title>
+	<meta name="description" content="Fly from orbit to anywhere on Earth, and record it.">
+	<meta name="theme-color" content="#000000">
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌍</text></svg>">
+	<link rel="stylesheet" href="/src/style.css">
+</head>
+<body class="state-boot">
+
+	<canvas id="view"></canvas>
+
+	<div id="ui">
+
+		<div class="matte matte-top"></div>
+		<div class="matte matte-bottom"></div>
+		<div class="rec-frame"></div>
+
+		<header class="brand">
+			<h1>Cinematic Zoom</h1>
+			<p>
+				Demo by <a href="https://x.com/makio64" target="_blank" rel="noopener">Makio64</a>
+				<span class="sep">·</span>
+				<span class="credit"><a href="https://github.com/NASA-AMMOS/3DTilesRendererJS" target="_blank" rel="noopener">3d-tiles-renderer</a> by <a class="nb" href="https://x.com/garrettkjohnson" target="_blank" rel="noopener">Garrett Johnson</a></span>
+				<span class="sep">·</span>
+				<span class="credit">3D tiles via <a href="https://cesium.com/platform/cesium-ion/" target="_blank" rel="noopener">Cesium Ion</a></span>
+			</p>
+		</header>
+
+		<div class="fps" id="fps"></div>
+
+		<div class="corner">
+			<a class="icon" href="https://github.com/Makio64/threejs-cinematic-world-zoom" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub">
+				<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 7.5c.85 0 1.71.12 2.51.35 1.91-1.32 2.75-1.05 2.75-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.48A10.27 10.27 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+			</a>
+			<button id="btn-help" class="icon" title="Shortcuts &nbsp;?" aria-label="Shortcuts">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9.2 9a3 3 0 1 1 4 2.8c-.8.3-1.2 1-1.2 1.8v.4"/><circle cx="12" cy="17.6" r="1"/></svg>
+				<span class="icon-glyph" aria-hidden="true">?</span>
+			</button>
+			<button id="btn-settings" class="icon" title="Settings" aria-expanded="false" aria-label="Settings">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
+			</button>
+		</div>
+
+		<!-- shown only while flying -->
+		<div class="shot-readout">
+			<div class="shot-name"></div>
+			<div class="shot-place"></div>
+			<div class="shot-coord"></div>
+		</div>
+		<div class="shot-alt"></div>
+		<div class="shot-progress"></div>
+		<div class="rec-pill"><i></i><span></span></div>
+
+		<!-- setup, one question at a time: fetch a key, then paste it. A browser
+		     that has already had a working key comes back to the paste screen on
+		     its own — see UI.askForKey and the boot() branch that picks a stage -->
+		<div class="keyprompt" id="keyprompt" hidden>
+			<section class="keyprompt-card" id="keyprompt-card" role="dialog" aria-modal="true" aria-labelledby="keyget-title">
+
+				<header class="keyhead">
+					<span class="keyhead-chapter" id="keyprompt-chapter">Your free key</span>
+					<span class="keyhead-count" id="keyprompt-count" aria-hidden="true">01 / 02</span>
+					<span class="vh" id="keyprompt-count-vh">Step 1 of 2</span>
+					<div class="keybar" aria-hidden="true"></div>
+				</header>
+
+				<div class="keybody" id="keyprompt-body">
+
+					<section class="keystep" id="keystep-get">
+						<h2 id="keyget-title" tabindex="-1">First, get a free key.</h2>
+						<p class="keystep-sub">The globe streams from Cesium, and a key is how it knows the requests are
+							yours. It is free and takes about a minute.</p>
+						<p class="keystep-hint">On Cesium the key is called an access token — copy the one named Default.
+							If it offers to add “Google Photorealistic 3D Tiles”, say yes.</p>
+					</section>
+
+					<section class="keystep" id="keystep-paste" hidden>
+						<h2 id="keypaste-title" tabindex="-1">Paste your key.</h2>
+						<p class="keystep-sub" id="keypaste-sub">It is kept in this browser and sent only to the map service.</p>
+						<form class="keyform" id="keyform" novalidate>
+							<label for="keyinput">Your key</label>
+							<div class="keyfield">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="8" cy="12" r="3.2"/><path d="M11.2 12H21m-3.6 0v3.2m-3.4-3.2v2.2"/></svg>
+								<input id="keyinput" type="text" autocomplete="off" autocapitalize="none" autocorrect="off"
+									spellcheck="false" required enterkeyhint="go" aria-describedby="keypaste-sub keyprompt-msg"
+									placeholder="eyJhbGciOiJIUzI1NiIs…">
+							</div>
+						</form>
+						<!-- a Google Maps key with the Map Tiles API works in this field too, but
+						     it is not offered here: it is a second way to do the one thing this
+						     screen is for, and the free Cesium key is the path. classifyKey takes
+						     it silently, the reason table names it if one is refused, and the
+						     README documents it -->
+					</section>
+
+				</div>
+
+				<footer class="keyfoot">
+					<p class="keynote" id="keyprompt-msg" role="status" aria-live="polite"></p>
+					<a class="keynote-link rule" id="keyprompt-msg-link" target="_blank" rel="noopener" hidden></a>
+
+					<div class="keyact" id="keyact-get">
+						<button class="keyalt rule" type="button" data-key-step="paste">I already have a key</button>
+						<a class="keygo" id="keyget" href="https://ion.cesium.com/signup" target="_blank" rel="noopener">Get a free key <span aria-hidden="true">↗</span></a>
+					</div>
+
+					<div class="keyact" id="keyact-paste" hidden>
+						<button class="keyalt rule" type="button" data-key-step="get">Where do I get a key?</button>
+						<button class="keygo" id="keysave" type="submit" form="keyform" data-label="Verify key" data-busy="Checking…">
+							<span>Verify key</span><i aria-hidden="true"></i>
+						</button>
+					</div>
+				</footer>
+
+			</section>
+		</div>
+
+		<nav class="bar" id="bar">
+			<button class="picker-backdrop" type="button" tabindex="-1" aria-hidden="true"></button>
+
+			<div class="opt-wrap">
+				<button class="opt rule" id="opt-place" aria-expanded="false" aria-controls="places" aria-haspopup="dialog">
+					<span class="opt-label">Place</span>
+					<span class="opt-line">
+						<span class="opt-value"></span>
+						<svg class="opt-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 15 6-6 6 6"/></svg>
+					</span>
+				</button>
+				<div class="places" id="places" role="dialog" aria-labelledby="places-title">
+					<div class="picker-head">
+						<span id="places-title">Destination</span>
+						<button class="picker-close" id="places-close" type="button" aria-label="Close place selection">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+						</button>
+					</div>
+					<div class="places-list" id="places-list"></div>
+					<div class="places-foot">
+						<div class="places-search">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+							<input id="search" type="search" autocomplete="off" spellcheck="false"
+								placeholder="Paste a Google Maps URL"
+								title="Paste the full URL from the address bar in Google Maps (share links won’t work) — or Apple Maps, OpenStreetMap, Bing, Waze, Yandex, a landmark name, or coordinates">
+						</div>
+						<div class="places-coords">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>
+							<input id="coord-lat" type="number" step="any" min="-90" max="90"
+								autocomplete="off" spellcheck="false" placeholder="Latitude" aria-label="Latitude">
+							<input id="coord-lon" type="number" step="any" min="-180" max="180"
+								autocomplete="off" spellcheck="false" placeholder="Longitude" aria-label="Longitude">
+							<button id="coord-go" class="rule" type="button" title="Go to these coordinates">Go</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="opt-wrap">
+				<button class="opt rule" id="opt-shot" aria-expanded="false" aria-controls="shots" aria-haspopup="dialog">
+					<span class="opt-label">Shot</span>
+					<span class="opt-line">
+						<span class="opt-value"></span>
+						<svg class="opt-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 15 6-6 6 6"/></svg>
+					</span>
+				</button>
+				<div class="shots" id="shots" role="dialog" aria-labelledby="shots-title">
+					<div class="picker-head">
+						<span id="shots-title">Camera move</span>
+						<button class="picker-close" id="shots-close" type="button" aria-label="Close shot selection">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+						</button>
+					</div>
+					<div class="shots-list" id="shots-list"></div>
+				</div>
+			</div>
+
+			<button class="opt rule" id="opt-light">
+				<span class="opt-label">Light</span>
+				<span class="opt-line"><span class="opt-value"></span></span>
+			</button>
+
+			<button class="opt rule" id="opt-length">
+				<span class="opt-label">Length</span>
+				<span class="opt-line"><span class="opt-value"></span></span>
+			</button>
+
+			<i class="bar-sep" aria-hidden="true"></i>
+
+			<button id="btn-go" class="go rule">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+				<span class="go-label">Start</span>
+			</button>
+
+			<button id="btn-record" class="rec-btn rule" aria-pressed="false" title="Record &nbsp;R">
+				<i></i><span>REC</span>
+			</button>
+
+		</nav>
+
+		<div class="status" id="status"></div>
+
+		<aside class="settings" id="settings">
+			<div class="settings-head">
+				<h3>Settings</h3>
+				<button id="settings-close" class="icon" aria-label="Close">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+				</button>
+			</div>
+
+			<div class="adv-group">
+				<h4>Light</h4>
+				<p class="hint" id="sun-note"></p>
+				<p class="hint">The moment the daylight solve landed on. Pick a light preset and the app searches the
+					year for a time when the sun over this coordinate sits at that elevation.</p>
+			</div>
+
+			<div class="adv-group">
+				<h4>Atmosphere</h4>
+				<div class="adv-row adv-check">
+					<label for="cloud-shadows">Cloud shadows</label>
+					<input id="cloud-shadows" type="checkbox">
+				</div>
+				<p class="hint">Clouds cast on the ground below. Costs a shadow pass, so it only runs in daylight and close in.</p>
+			</div>
+
+			<div class="adv-group">
+				<h4>Recording</h4>
+				<div class="adv-row">
+					<label for="rec-res">Resolution</label>
+					<select id="rec-res">
+						<option value="720">720p</option>
+						<option value="1080" selected>1080p</option>
+						<option value="1440">1440p</option>
+						<option value="2160">4K</option>
+					</select>
+				</div>
+				<div class="adv-row">
+					<label for="rec-fps">Frame rate</label>
+					<select id="rec-fps">
+						<option value="24">24 fps</option>
+						<option value="30">30 fps</option>
+						<option value="60" selected>60 fps</option>
+					</select>
+				</div>
+				<div class="adv-row">
+					<label for="rec-ar">Aspect</label>
+					<select id="rec-ar">
+						<option value="1.7778" selected>16 : 9</option>
+						<option value="2">2.00 : 1</option>
+						<option value="2.39">2.39 : 1 scope</option>
+						<option value="1">1 : 1</option>
+						<option value="0.5625">9 : 16 vertical</option>
+					</select>
+				</div>
+				<div class="adv-row">
+					<label for="rec-quality">Tile quality</label>
+					<select id="rec-quality">
+						<option value="fast">Fast</option>
+						<option value="balanced">Balanced</option>
+						<option value="best" selected>Best</option>
+					</select>
+				</div>
+				<p class="hint" id="rec-size"></p>
+				<p class="hint">Frames render one at a time on a fixed clock, so the export is smooth even when the flight is not. It takes longer than the clip.</p>
+			</div>
+		</aside>
+
+		<!-- the landing: the readout corners stay, and these sit between them -->
+		<div class="finish" id="finish">
+			<button class="rule" data-act="replay">Replay</button>
+			<button class="rule" data-act="change">Explore other locations</button>
+			<button class="rule save" data-act="save">Save video</button>
+		</div>
+
+		<div class="help" id="help">
+			<div class="help-card">
+				<h3>Shortcuts</h3>
+				<dl>
+					<dt>Space</dt><dd>Start, or abort the flight</dd>
+					<dt>Esc</dt><dd>Back out</dd>
+					<dt>P S</dt><dd>Choose the place / shot</dd>
+					<dt>L T</dt><dd>Cycle light / time</dd>
+					<dt>← →</dt><dd>Previous / next place</dd>
+					<dt>R</dt><dd>Arm the recorder</dd>
+					<dt>H</dt><dd>Hide the interface</dd>
+					<dt>F</dt><dd>Fullscreen</dd>
+				</dl>
+				<p>Made for the three.js conference, to get a few shoots of Earth.</p>
+				<p>After a flight lands, drag to look around.</p>
+				<p>Open Place and paste a Google Maps URL from the address bar
+					to fly there. Share / short links won’t work.</p>
+			</div>
+		</div>
+
+		<div class="boot" id="boot">
+			<div class="boot-inner">
+				<div class="boot-line"></div>
+				<div class="boot-text">Building the atmosphere</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="/src/main.js"></script>
+</body>
+</html>

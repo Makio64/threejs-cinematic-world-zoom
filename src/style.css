@@ -1,0 +1,2109 @@
+:root {
+	--glass-solid: rgba(9, 11, 15, .94);
+	--hair: rgba(255, 255, 255, .11);
+	--hair-hi: rgba(255, 255, 255, .24);
+	--ink: #f3f5f8;
+	--ink-2: rgba(243, 245, 248, .66);
+	--ink-3: rgba(243, 245, 248, .48);
+	--accent: #d9dcdf;
+	--rec: #ff453a;
+	--r: 13px;
+	--r-s: 10px;
+	/* type on the image carries no panel, so it carries its own separation:
+	   wide and soft enough to read as depth rather than as a drop shadow, and
+	   invisible over the black the interface mostly sits on */
+	--shade: 0 1px 14px rgba(0, 0, 0, .6);
+	--ease: cubic-bezier(.22, 1, .36, 1);
+	--t: 240ms;
+	--ar: 1.7778;
+	--progress: 0;
+	--load: 0;
+	/* the line the in-frame readouts sit on: a plain margin, except while the
+	   matte is down, when it lifts clear of the letterbox. Transitioning the
+	   `bottom` it feeds lets the readouts ride the matte rather than jump. */
+	--hud-bottom: 30px;
+}
+
+body.state-flying,
+body.state-done {
+	--hud-bottom: max(30px, calc((100vh - 100vw / var(--ar)) / 2 + 26px));
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #000;
+	color: var(--ink);
+	overflow: hidden;
+	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		'Helvetica Neue', Arial, sans-serif;
+	font-synthesis-weight: none;
+	-webkit-font-smoothing: antialiased;
+}
+
+#view {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	touch-action: none;
+}
+
+/* the capture pass drives the canvas to an exact pixel size; keep the on-screen
+   box matching that aspect so what you see is what gets encoded */
+body.is-capturing #view {
+	inset: auto;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	width: auto;
+	height: auto;
+	max-width: 100vw;
+	max-height: 100vh;
+}
+
+#ui {
+	position: fixed;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+
+#ui button,
+#ui input,
+#ui select,
+#ui a { pointer-events: auto; }
+
+/* ─────────────────────────────────────────────── title */
+
+.brand {
+	position: fixed;
+	top: 26px;
+	left: 0;
+	right: 0;
+	text-align: center;
+	user-select: none;
+	transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility var(--t);
+}
+
+.brand h1 {
+	margin: 0;
+	font-size: clamp(15px, 1.6vw, 19px);
+	font-weight: 500;
+	letter-spacing: .26em;
+	text-transform: uppercase;
+	color: var(--ink);
+}
+
+.brand p {
+	margin: 7px 0 0;
+	font-size: 9px;
+	letter-spacing: .14em;
+	text-transform: uppercase;
+	color: rgba(243, 245, 248, .39);
+}
+
+.brand a { color: rgba(243, 245, 248, .67); text-decoration: none; }
+.brand a:hover { color: var(--accent); }
+
+/* the byline and the two libraries share one line. A narrow screen folds it;
+   names stay whole across the fold, the words around them may break */
+.brand p a, .brand .nb, .brand .sep { white-space: nowrap; }
+/* a shade behind the byline, so the author still reads first */
+.brand .credit { opacity: .8; }
+.brand .sep { padding: 0 .45em; opacity: .46; }
+
+/* ─────────────────────────────────────────────── frame rate */
+
+/* the one number that belongs on screen the whole time: it is about the
+   machine, not the shot, so it stays as quiet as type can be */
+.fps {
+	position: fixed;
+	top: 24px;
+	left: 26px;
+	font-size: 10px;
+	letter-spacing: .14em;
+	color: var(--ink-3);
+	font-variant-numeric: tabular-nums;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	user-select: none;
+	text-shadow: var(--shade);
+	transition: opacity var(--t) var(--ease);
+}
+
+/* ─────────────────────────────────────────────── corner tools */
+
+.corner {
+	position: fixed;
+	top: 20px;
+	right: 22px;
+	display: flex;
+	gap: 6px;
+	transition: opacity var(--t) var(--ease), visibility var(--t);
+}
+
+.icon {
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	border: 0;
+	background: transparent;
+	color: var(--ink-3);
+	cursor: pointer;
+	text-decoration: none;
+	transition: color 220ms var(--ease);
+}
+
+.icon svg { width: 16px; height: 16px; }
+.icon-glyph { display: none; font-size: 15px; font-weight: 500; line-height: 1; }
+.icon:hover { color: var(--ink); transition-duration: 110ms; }
+.icon[aria-expanded="true"] { color: var(--accent); }
+
+/* ─────────────────────────────────────────────── the bar */
+
+/* No slab. The controls are type on the sky, set on one line and sharing the
+   baseline the readouts use after the landing, so the first screen and the last
+   are the same interface seen at two moments. */
+.bar {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 30px;
+	padding: 0 24px;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	gap: 28px;
+	text-shadow: var(--shade);
+	transition: opacity 380ms var(--ease), transform 420ms var(--ease), visibility 420ms;
+	/* the popovers can only paint above .status (z 6) if the bar outranks it */
+	z-index: 7;
+}
+
+.opt-wrap { position: relative; display: flex; }
+
+.bar-sep {
+	width: 1px;
+	height: 26px;
+	margin: 0 2px;
+	background: var(--hair);
+}
+
+.opt {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 0 0 8px;
+	border: 0;
+	background: none;
+	color: var(--ink);
+	font: inherit;
+	cursor: pointer;
+	text-align: left;
+}
+
+/* fixed columns: a value that changes width — Golden to Blue hour, Paris to
+   Christ the Redeemer — must not shove its neighbours along the line */
+#opt-place { min-width: 176px; }
+#opt-shot { min-width: 118px; }
+#opt-light { min-width: 104px; }
+#opt-length { min-width: 54px; }
+
+.opt-label {
+	font-size: 9px;
+	letter-spacing: .17em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	font-weight: 500;
+	transition: color 220ms var(--ease);
+}
+
+.opt:hover .opt-label,
+.opt[aria-expanded="true"] .opt-label { color: var(--ink-2); }
+
+.opt-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+
+.opt-value {
+	font-size: 13.5px;
+	font-weight: 500;
+	letter-spacing: -.005em;
+	white-space: nowrap;
+	max-width: 168px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* the value slides up as it changes, so a click reads as advancing a list */
+.opt-value.step {
+	animation: step 320ms var(--ease);
+}
+
+@keyframes step {
+	0% { opacity: 0; transform: translateY(7px); }
+	100% { opacity: 1; transform: none; }
+}
+
+.opt-caret {
+	flex: none;
+	width: 9px;
+	height: 9px;
+	color: var(--ink-3);
+	transition: transform 260ms var(--ease), color 220ms var(--ease);
+}
+
+.opt[aria-expanded="true"] .opt-value,
+.opt[aria-expanded="true"] .opt-caret { color: var(--accent); }
+.opt[aria-expanded="true"] .opt-caret { transform: rotate(180deg); }
+
+/* Contrast, the play glyph and the extra tracking are enough to make this the
+	primary move without introducing a second palette over the image. */
+.go {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 0 8px;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	letter-spacing: .2em;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition: color 220ms var(--ease);
+}
+
+.go svg { width: 9px; height: 9px; fill: currentColor; }
+.go:hover { color: var(--ink); }
+
+/* Start and Record are different lengths; reserving the wider one keeps the
+   whole row from shifting sideways when the recorder is armed */
+.go-label { min-width: 68px; }
+
+body.is-recording .go { color: var(--rec); }
+
+.rec-btn {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 0 0 8px;
+	border: 0;
+	background: none;
+	color: var(--ink-3);
+	font: inherit;
+	font-size: 10px;
+	letter-spacing: .2em;
+	font-weight: 500;
+	cursor: pointer;
+	transition: color 220ms var(--ease);
+}
+
+.rec-btn i {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.rec-btn:hover { color: var(--ink-2); }
+.rec-btn[aria-pressed="true"] { color: var(--rec); }
+.rec-btn[aria-pressed="true"] i { animation: blink 1.4s steps(1) infinite; }
+
+@keyframes blink { 50% { opacity: .25; } }
+
+/* ─────────────────────────────────────────── the rule under a control */
+
+/* Drawn left to right on the way in and, on the way out, still travelling that
+   way — the tail leaves last, so it reads as a stroke being finished rather
+   than a stroke being undone. Swapping the origin at the moment the scale flips
+   is what buys that: it is never a played-backwards version of the entrance. */
+.rule::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 1px;
+	background: currentColor;
+	transform: scaleX(0);
+	transform-origin: 100% 50%;
+	transition: transform 460ms var(--ease);
+}
+
+.rule:hover::after,
+.rule:focus-visible::after { transform: scaleX(1); transform-origin: 0 50%; }
+
+.rule:focus-visible { outline: none; }
+
+/* the options carry full-strength ink, which would make too loud a rule */
+.opt::after { background: rgba(255, 255, 255, .5); }
+
+/* an open list is a held state, so its rule stays drawn */
+.opt[aria-expanded="true"]::after { transform: scaleX(1); transform-origin: 0 50%; background: var(--accent); }
+
+/* ─────────────────────────────────────────── place & shot lists */
+
+.places,
+.shots {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 10px);
+	width: 340px;
+	max-height: min(62vh, 520px);
+	display: flex;
+	flex-direction: column;
+	border-radius: 0;
+	background: rgba(8, 9, 11, .97);
+	backdrop-filter: blur(24px);
+	-webkit-backdrop-filter: blur(24px);
+	border: 0;
+	border-top: 1px solid rgba(255, 255, 255, .11);
+	border-right: 1px solid rgba(255, 255, 255, .11);
+	border-bottom: 1px solid rgba(255, 255, 255, .11);
+	box-shadow: none;
+	opacity: 0;
+	/* visibility, not just pointer-events: a child button or input carries
+	   `#ui button { pointer-events: auto }`, which wins over the inherited
+	   none and would keep the closed popover clickable while invisible */
+	visibility: hidden;
+	transform: translateY(8px);
+	transform-origin: 0 100%;
+	pointer-events: none;
+	transition: opacity 220ms var(--ease), transform 280ms var(--ease), visibility 280ms;
+	overflow: hidden;
+}
+
+.shots { width: 320px; }
+
+body.places-open .places,
+body.shots-open .shots { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+
+.picker-head {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 15px 16px 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, .07);
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: .2em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.picker-close { display: none; }
+.picker-backdrop { display: none; }
+
+.places-list,
+.shots-list {
+	overflow-y: auto;
+	padding: 0 14px 12px;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(255, 255, 255, .14) transparent;
+}
+
+.places-list::-webkit-scrollbar,
+.shots-list::-webkit-scrollbar { width: 6px; }
+
+.places-list::-webkit-scrollbar-thumb,
+.shots-list::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, .12);
+	border-radius: 3px;
+}
+
+.shot-option {
+	position: relative;
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 10px;
+	width: calc( 100% + 28px );
+	margin: 0 -14px;
+	padding: 12px 16px;
+	border: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, .055);
+	border-radius: 0;
+	background: none;
+	color: var(--ink-2);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: color .22s var(--ease), background-color .22s var(--ease), border-color .22s var(--ease);
+}
+
+.shot-option:last-child { border-bottom: 0; }
+
+.shot-index {
+	padding-top: 2px;
+	font-size: 10px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: .08em;
+	color: var(--ink-3);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	transition: color .22s var(--ease);
+}
+
+.shot-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.shot-option b {
+	font-weight: 400;
+	font-size: 13px;
+	letter-spacing: 0;
+	color: rgba(243, 245, 248, .76);
+	transition: color .22s var(--ease);
+}
+
+.shot-option i {
+	font-style: normal;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--ink-3);
+	transition: color .22s var(--ease);
+}
+
+.shot-option em {
+	font-style: normal;
+	padding-top: 2px;
+	font-size: 10px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: .06em;
+	color: var(--ink-3);
+	transition: color .22s var(--ease);
+}
+
+.shot-option:hover,
+.shot-option:focus-visible {
+	outline: none;
+	background: #fff;
+	border-color: transparent;
+	color: #0b0d11;
+	box-shadow: none;
+}
+
+.shot-option:hover b,
+.shot-option:focus-visible b,
+.shot-option:hover .shot-index,
+.shot-option:focus-visible .shot-index,
+.shot-option:hover i,
+.shot-option:focus-visible i,
+.shot-option:hover em,
+.shot-option:focus-visible em { color: #0b0d11; }
+
+.shot-option[aria-pressed="true"] {
+	background: none;
+}
+
+.shot-option[aria-pressed="true"] b,
+.shot-option[aria-pressed="true"] .shot-index { color: var(--ink); }
+
+.shot-option[aria-pressed="true"] i,
+.shot-option[aria-pressed="true"] em { color: var(--ink-2); }
+
+.shot-option[aria-pressed="true"]:hover,
+.shot-option[aria-pressed="true"]:focus-visible {
+	background: #fff;
+	color: #0b0d11;
+}
+
+.shot-option[aria-pressed="true"]:hover b,
+.shot-option[aria-pressed="true"]:focus-visible b,
+.shot-option[aria-pressed="true"]:hover .shot-index,
+.shot-option[aria-pressed="true"]:focus-visible .shot-index,
+.shot-option[aria-pressed="true"]:hover i,
+.shot-option[aria-pressed="true"]:focus-visible i,
+.shot-option[aria-pressed="true"]:hover em,
+.shot-option[aria-pressed="true"]:focus-visible em { color: #0b0d11; }
+
+.place {
+	position: relative;
+	display: grid;
+	grid-template-columns: 20px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+	width: calc( 100% + 28px );
+	margin: 0 -14px;
+	padding: 8px 16px;
+	border: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, .055);
+	border-radius: 0;
+	background: none;
+	color: var(--ink-2);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: color .22s var(--ease), background-color .22s var(--ease), border-color .22s var(--ease);
+}
+
+.place:last-child { border-bottom: 0; }
+
+.place em {
+	display: block;
+	width: 20px;
+	font-style: normal;
+	font-size: 14px;
+	line-height: 1;
+	text-align: center;
+	opacity: .78;
+}
+
+.place-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.place-copy b {
+	font-weight: 400;
+	font-size: 13px;
+	letter-spacing: 0;
+	color: rgba(243, 245, 248, .76);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	transition: color .22s var(--ease);
+}
+
+.place-copy small {
+	font-size: 10.5px;
+	color: var(--ink-3);
+	letter-spacing: .02em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	transition: color .22s var(--ease);
+}
+
+.place i {
+	font-style: normal;
+	font-size: 9.5px;
+	font-weight: 500;
+	letter-spacing: .12em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	white-space: nowrap;
+	transition: color .22s var(--ease);
+}
+
+.place:hover,
+.place.cursor {
+	background: #fff;
+	border-color: transparent;
+	color: #0b0d11;
+}
+
+.place:hover .place-copy b,
+.place.cursor .place-copy b,
+.place:hover .place-copy small,
+.place.cursor .place-copy small,
+.place:hover i,
+.place.cursor i { color: #0b0d11; }
+
+.place:focus-visible {
+	outline: none;
+	background: #fff;
+	border-color: transparent;
+	color: #0b0d11;
+	box-shadow: none;
+}
+
+.place:focus-visible .place-copy b,
+.place:focus-visible .place-copy small,
+.place:focus-visible i { color: #0b0d11; }
+
+.place[aria-pressed="true"] {
+	background: none;
+}
+
+.place[aria-pressed="true"] .place-copy b,
+.place[aria-pressed="true"] i { color: var(--ink); }
+
+.place[aria-pressed="true"]:hover,
+.place[aria-pressed="true"]:focus-visible {
+	background: #fff;
+	color: #0b0d11;
+}
+
+.place[aria-pressed="true"]:hover .place-copy b,
+.place[aria-pressed="true"]:focus-visible .place-copy b,
+.place[aria-pressed="true"]:hover .place-copy small,
+.place[aria-pressed="true"]:focus-visible .place-copy small,
+.place[aria-pressed="true"]:hover i,
+.place[aria-pressed="true"]:focus-visible i { color: #0b0d11; }
+
+.places-search {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 2px;
+	border-radius: 0;
+	background: transparent;
+	border: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, .13);
+	transition: border-color 180ms var(--ease), background 180ms var(--ease);
+}
+
+.places-foot {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 10px 12px;
+	border-top: 1px solid rgba(255, 255, 255, .08);
+	background: transparent;
+}
+
+.places-coords {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 2px;
+	border-radius: 0;
+	background: transparent;
+	border: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, .13);
+	transition: border-color 180ms var(--ease), background 180ms var(--ease);
+}
+
+.places-search:focus-within,
+.places-coords:focus-within {
+	background: transparent;
+	border-color: rgba(255, 255, 255, .3);
+}
+
+.places-search svg,
+.places-coords svg {
+	width: 14px;
+	height: 14px;
+	color: var(--ink-3);
+	flex: none;
+}
+
+.places-search input,
+.places-coords input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: none;
+	color: var(--ink);
+	font: inherit;
+	font-size: 12.5px;
+	outline: none;
+}
+
+.places-search input::placeholder,
+.places-coords input::placeholder { color: var(--ink-3); }
+
+.places-search input::-webkit-search-cancel-button { display: none; }
+.places-coords input:focus::placeholder { color: transparent; }
+
+/* spinners would fight the compact row; steppers stay on the keyboard */
+.places-coords input::-webkit-outer-spin-button,
+.places-coords input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.places-coords input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
+.places-coords button {
+	position: relative;
+	flex: none;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: .18em;
+	text-transform: uppercase;
+	padding: 0 2px 5px;
+	cursor: pointer;
+	transition: color 200ms var(--ease);
+}
+
+.places-coords button:hover { color: var(--ink); }
+
+/* ─────────────────────────────────────────────── settings */
+
+.settings {
+	position: fixed;
+	top: 62px;
+	right: 22px;
+	width: 320px;
+	max-height: calc(100vh - 140px);
+	overflow-y: auto;
+	padding: 14px 16px 18px;
+	border-radius: var(--r);
+	background: var(--glass-solid);
+	backdrop-filter: blur(26px) saturate(1.5);
+	-webkit-backdrop-filter: blur(26px) saturate(1.5);
+	border: 1px solid var(--hair);
+	box-shadow: 0 24px 60px -24px #000;
+	opacity: 0;
+	visibility: hidden;
+	transform: translateY(-8px) scale(.985);
+	transform-origin: 100% 0;
+	pointer-events: none;
+	transition: opacity 200ms var(--ease), transform 240ms var(--ease), visibility 240ms;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(255, 255, 255, .18) transparent;
+}
+
+body.settings-open .settings { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+
+.settings-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 14px;
+}
+
+.settings-head h3 {
+	margin: 0;
+	font-size: 10px;
+	letter-spacing: .2em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	font-weight: 500;
+}
+
+.settings-head .icon { width: 26px; height: 26px; }
+.settings-head .icon svg { width: 14px; height: 14px; }
+
+.adv-group + .adv-group { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hair); }
+
+.adv-group h4 {
+	margin: 0 0 10px;
+	font-size: 9.5px;
+	letter-spacing: .17em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	font-weight: 500;
+}
+
+.adv-row {
+	display: grid;
+	grid-template-columns: 1fr 1.2fr auto;
+	align-items: center;
+	gap: 9px;
+	margin-bottom: 8px;
+	font-size: 11.5px;
+	color: var(--ink-2);
+}
+
+.adv-row:not(.adv-check) {
+	grid-template-columns: 1fr auto;
+	gap: 18px;
+	min-height: 38px;
+	margin: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, .055);
+}
+
+.adv-row:not(.adv-check):last-of-type { border-bottom: 0; }
+
+.adv-row:not(.adv-check) > label {
+	font-size: 10.5px;
+	letter-spacing: .01em;
+	color: rgba(243, 245, 248, .42);
+}
+
+.adv-row select {
+	grid-column: 2;
+	justify-self: end;
+	width: auto;
+	min-width: 120px;
+	margin: 0;
+	padding: 10px 14px 10px 0;
+	appearance: none;
+	-webkit-appearance: none;
+	background-color: transparent;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' viewBox='0 0 7 4' fill='none'%3E%3Cpath d='M.5.5 3.5 3.5 6.5.5' stroke='%23f3f5f8' stroke-opacity='.34' stroke-width='.7'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right center;
+	background-size: 7px 4px;
+	border: 0;
+	border-radius: 0;
+	color: rgba(243, 245, 248, .86);
+	color-scheme: dark;
+	font: inherit;
+	font-size: 12px;
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0;
+	text-align: right;
+	text-align-last: right;
+	cursor: pointer;
+	outline: none;
+	transition: color 180ms var(--ease);
+}
+
+.adv-row select:hover { color: var(--ink); }
+
+.adv-row select:focus-visible {
+	color: var(--ink);
+	outline: 1px solid rgba(243, 245, 248, .32);
+	outline-offset: 2px;
+}
+
+.adv-row select option {
+	background: #0b0d11;
+	color: var(--ink);
+	text-transform: none;
+}
+
+@media (forced-colors: active) {
+	.adv-row select {
+		appearance: auto;
+		-webkit-appearance: auto;
+		padding: 8px;
+		background-image: none;
+		border: 1px solid ButtonText;
+	}
+
+	.adv-row select:focus-visible {
+		outline: 2px solid Highlight;
+		outline-offset: 2px;
+		box-shadow: none;
+	}
+}
+
+/* a native checkbox is the loudest thing on a panel this quiet */
+.adv-check input[type="checkbox"] {
+	justify-self: start;
+	position: relative;
+	appearance: none;
+	-webkit-appearance: none;
+	width: 30px;
+	height: 16px;
+	margin: 0;
+	border: 1px solid var(--hair);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, .05);
+	cursor: pointer;
+	transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+
+.adv-check input[type="checkbox"]::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--ink-3);
+	transition: transform 240ms var(--ease), background 200ms var(--ease);
+}
+
+.adv-check input[type="checkbox"]:hover { border-color: var(--hair-hi); }
+.adv-check input[type="checkbox"]:checked { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .3); }
+.adv-check input[type="checkbox"]:checked::after { transform: translateX(14px); background: var(--accent); }
+
+.hint {
+	margin: 10px 0 0;
+	font-size: 10.5px;
+	line-height: 1.55;
+	color: var(--ink-3);
+}
+
+.hint a { color: var(--accent); }
+
+#sun-note {
+	color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+	margin-top: 0;
+}
+
+/* ─────────────────────────────────────────────── credentials */
+
+.keyprompt {
+	position: fixed;
+	inset: 0;
+	z-index: 30;
+	display: grid;
+	place-items: center;
+	padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+	/* the globe is the backdrop, not a black plate: a scrim light enough that the
+	   planet still reads around the card, deepening towards the corners so the
+	   title and the card keep their separation */
+	background: radial-gradient(115% 76% at 50% 46%, rgba(0, 0, 0, .2), rgba(0, 0, 0, .74) 100%);
+	backdrop-filter: blur(2px) saturate(.95);
+	-webkit-backdrop-filter: blur(2px) saturate(.95);
+	/* #ui hands pointer events to its controls one tag at a time, which leaves
+	   the card's own headings and copy dead. This is a modal — it takes the
+	   whole surface, and the gate below it is inert anyway. */
+	pointer-events: auto;
+}
+
+.keyprompt[hidden] { display: none; }
+
+/* Two screens in one frame: a header carrying the chapter and the progress
+   stroke, a body that scrolls only if a step needs it, and a footer that pins
+   the primary action and the single notice row. The three rows are the point.
+   A step's length can never push the button below the fold — which the old
+   one-column card did on a phone at first paint — and a failure that arrives
+   while the user is standing on screen 01 is still visible, because the notice
+   does not live inside a step. */
+.keyprompt-card {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr) auto;
+	width: min(480px, 100%);
+	max-height: calc(100vh - 32px);
+	max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+	overflow: hidden;
+	border: 1px solid rgba(255, 255, 255, .16);
+	border-radius: var(--r);
+	background: var(--glass-solid);
+	box-shadow: 0 36px 100px -28px rgba(0, 0, 0, .95);
+	animation: keycard-in 280ms var(--ease);
+}
+
+@keyframes keycard-in { from { opacity: 0; transform: translateY(8px); } }
+
+.keyhead {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	align-items: baseline;
+	gap: 10px;
+	padding: 18px 26px 0;
+}
+
+.keyhead-chapter {
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: .17em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.keyhead-count {
+	font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+	letter-spacing: .08em;
+	font-variant-numeric: tabular-nums;
+	color: var(--ink-3);
+}
+
+/* the stroke the controls draw under themselves, held at the step instead of
+   at a hover — same colour, same 460ms, so progress reads as the same gesture */
+.keybar {
+	grid-column: 1 / -1;
+	position: relative;
+	height: 1px;
+	margin-top: 14px;
+	background: rgba(255, 255, 255, .09);
+}
+
+.keybar::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: var(--accent);
+	transform: scaleX(var(--keystep, .5));
+	transform-origin: 0 50%;
+	transition: transform 460ms var(--ease);
+}
+
+/* a rejected key re-opens on the paste screen alone, so the card must not
+   advertise a first screen the user was never shown */
+.keyprompt.is-single .keyhead-count,
+.keyprompt.is-single .keyhead .vh,
+.keyprompt.is-single .keybar { display: none; }
+
+.keybody {
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 18px 26px 20px;
+}
+
+/* Going from display:none to displayed restarts the animation on its own, so
+   the step change needs no JS timing and there is never a frame with both
+   steps in the box tree — which is what keeps the focus ring honest. */
+.keystep { animation: keystep-in 320ms var(--ease); }
+.keystep[hidden] { display: none; }
+
+/* the screen assembles rather than appears, on the .finish ladder */
+.keystep > * { animation: keystep-in 320ms var(--ease) both; }
+.keystep > :nth-child(2) { animation-delay: 60ms; }
+.keystep > :nth-child(3) { animation-delay: 120ms; }
+
+@keyframes keystep-in { from { opacity: 0; transform: translateY(7px); } }
+
+/* back mirrors the axis rather than replaying the entrance backwards — the
+   same reasoning as the rule under a control, which never plays in reverse */
+@keyframes keystep-back { from { opacity: 0; transform: translateY(-7px); } }
+
+.keyprompt.is-back .keystep,
+.keyprompt.is-back .keystep > * { animation-name: keystep-back; }
+
+.keystep h2 {
+	margin: 0;
+	font-size: 24px;
+	font-weight: 500;
+	letter-spacing: -.025em;
+}
+
+/* it takes focus on arrival so the heading is the announcement; that is not a
+   reason to draw a ring around a paragraph the user cannot act on */
+.keystep h2:focus { outline: none; }
+
+.keystep-sub {
+	margin: 11px 0 0;
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--ink-2);
+}
+
+.keystep-hint {
+	margin: 15px 0 0;
+	font-size: 10.5px;
+	line-height: 1.55;
+	color: var(--ink-3);
+}
+
+.keystep-hint a {
+	position: relative;
+	color: var(--accent);
+	font-weight: 500;
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.keyform { margin-top: 22px; }
+
+.keyform label {
+	display: block;
+	margin-bottom: 9px;
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: .15em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+/* an underline row, like the coordinate fields — a boxed input would be the
+   only one in the app, and this is a field shown in error as often as clean */
+.keyfield {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 9px 2px;
+	border-bottom: 1px solid var(--hair);
+	transition: border-color 220ms var(--ease);
+}
+
+.keyfield svg {
+	flex: none;
+	width: 15px;
+	height: 15px;
+	color: var(--ink-3);
+}
+
+.keyfield input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: none;
+	color: var(--ink);
+	font: inherit;
+	font-size: 13px;
+	padding: 0;
+	outline: none;
+}
+
+.keyfield input::placeholder { color: var(--ink-3); }
+.keyfield:focus-within { border-bottom-color: var(--hair-hi); }
+.keyprompt.has-error .keyfield { border-bottom-color: rgba(255, 100, 92, .52); }
+
+.keyfoot {
+	padding: 14px 26px 20px;
+	border-top: 1px solid var(--hair);
+}
+
+/* two lines held open: the longest rejection runs to two, and a card that
+   resizes under the answer reads as a card that lost its place. Only on the
+   paste screen — that is the one that answers back */
+.keynote {
+	min-height: 34px;
+	margin: 0;
+	font-size: 10.5px;
+	line-height: 1.55;
+	color: var(--ink-2);
+}
+
+.keyprompt.is-step-get .keynote { min-height: 0; }
+
+.keyprompt.has-error .keynote { color: #f2aaa6; }
+
+.keynote-link {
+	position: relative;
+	display: inline-block;
+	margin: 0 0 10px;
+	font-size: 10.5px;
+	font-weight: 500;
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.keynote-link[hidden] { display: none; }
+
+.keyact {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.keyact[hidden] { display: none; }
+
+.keyalt {
+	position: relative;
+	padding: 0 0 8px;
+	border: 0;
+	background: none;
+	color: var(--ink-3);
+	font: inherit;
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: .13em;
+	text-transform: uppercase;
+	text-align: left;
+	cursor: pointer;
+	transition: color 220ms var(--ease);
+}
+
+.keyalt:hover { color: var(--ink-2); }
+.keyalt[aria-disabled="true"] { pointer-events: none; opacity: .4; }
+
+/* the one filled control in the app. Setup is the only screen where the user
+   has not met the interface yet, so the primary says which thing it is */
+.keygo {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	flex: none;
+	min-height: 44px;
+	padding: 0 20px;
+	border: 0;
+	border-radius: var(--r-s);
+	background: var(--accent);
+	color: #090b0f;
+	font: inherit;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: .12em;
+	text-transform: uppercase;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background 200ms var(--ease);
+}
+
+.keygo:hover { background: var(--ink); }
+.keygo:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 3px; }
+
+/* aria-disabled, not disabled: a disabled button drops out of the focus ring
+   mid-verify, and the trap would have nothing to wrap around */
+.keygo[aria-disabled="true"] { cursor: wait; opacity: .72; }
+
+.keygo i {
+	display: none;
+	width: 11px;
+	height: 11px;
+	border: 1.5px solid rgba(9, 11, 15, .32);
+	border-top-color: #090b0f;
+	border-radius: 50%;
+	animation: key-spin .7s linear infinite;
+}
+
+.keyprompt.is-checking .keygo i { display: block; }
+
+@keyframes key-spin { to { transform: rotate(360deg); } }
+
+/* the step count, for a reader that cannot see the counter it is taken from */
+.vh {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────── cinematic overlay */
+
+.matte {
+	position: fixed;
+	left: 0;
+	right: 0;
+	height: max(0px, calc((100vh - 100vw / var(--ar)) / 2));
+	background: #000;
+	z-index: 5;
+	pointer-events: none;
+	transition: transform 900ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.matte-top { top: 0; transform: translateY(-101%); }
+.matte-bottom { bottom: 0; transform: translateY(101%); }
+body.state-flying .matte,
+body.state-done .matte { transform: none; }
+body.is-capturing .matte-top { transform: translateY(-101%); }
+body.is-capturing .matte-bottom { transform: translateY(101%); }
+
+.shot-readout {
+	position: fixed;
+	left: 30px;
+	bottom: var(--hud-bottom);
+	z-index: 6;
+	pointer-events: none;
+	opacity: 0;
+	transform: translateY(6px);
+	text-shadow: var(--shade);
+	/* `bottom` follows --hud-bottom, which moves with the matte: same curve, so
+	   the readout rides the letterbox open and closed instead of jumping */
+	transition: opacity 600ms var(--ease), transform 600ms var(--ease),
+		bottom 900ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.shot-alt {
+	position: fixed;
+	right: 30px;
+	bottom: var(--hud-bottom);
+	z-index: 6;
+	pointer-events: none;
+	opacity: 0;
+	font-size: 11px;
+	letter-spacing: .1em;
+	color: rgba(255, 255, 255, .45);
+	font-variant-numeric: tabular-nums;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	text-shadow: var(--shade);
+	transition: opacity 600ms var(--ease), bottom 900ms cubic-bezier(.16, 1, .3, 1);
+}
+
+/* mid-flight the readout comes and goes with the overlay window; once the
+   camera lands it stays — the landing is where you read where you are */
+body.overlay-on .shot-readout,
+body.state-done .shot-readout,
+body.state-free .shot-readout { opacity: 1; transform: none; }
+
+body.overlay-on .shot-alt,
+body.state-done .shot-alt,
+body.state-free .shot-alt { opacity: 1; }
+
+.shot-name {
+	font-size: 19px;
+	font-weight: 500;
+	letter-spacing: .05em;
+	text-transform: uppercase;
+}
+
+.shot-place {
+	margin-top: 4px;
+	font-size: 10.5px;
+	letter-spacing: .17em;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, .55);
+}
+
+.shot-coord {
+	margin-top: 3px;
+	font-size: 10.5px;
+	letter-spacing: .06em;
+	color: rgba(255, 255, 255, .4);
+	font-variant-numeric: tabular-nums;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.shot-progress {
+	position: fixed;
+	left: 0;
+	bottom: 0;
+	height: 1px;
+	width: 100%;
+	background: rgba(255, 255, 255, .3);
+	transform-origin: 0 50%;
+	transform: scaleX(var(--progress));
+	z-index: 7;
+	opacity: 0;
+	transition: opacity 400ms var(--ease);
+}
+
+body.state-flying .shot-progress { opacity: 1; }
+
+/* ─────────────────────────────────────────────── recording chrome */
+
+.rec-frame {
+	position: fixed;
+	inset: 0;
+	z-index: 8;
+	pointer-events: none;
+	box-shadow: inset 0 0 0 2px rgba(255, 69, 58, .5);
+	opacity: 0;
+	transition: opacity var(--t) var(--ease);
+}
+
+body.is-capturing .rec-frame { opacity: 1; }
+
+.rec-pill {
+	position: fixed;
+	top: 20px;
+	left: 50%;
+	transform: translate(-50%, -10px);
+	z-index: 9;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 14px;
+	border-radius: 999px;
+	background: rgba(9, 11, 15, .82);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border: 1px solid var(--hair);
+	font-size: 11px;
+	letter-spacing: .08em;
+	font-variant-numeric: tabular-nums;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	color: var(--ink-2);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+	white-space: pre;
+}
+
+.rec-pill i {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--rec);
+	animation: blink 1.4s steps(1) infinite;
+}
+
+body.is-capturing .rec-pill { opacity: 1; transform: translate(-50%, 0); }
+
+/* ─────────────────────────────────────────────── status */
+
+.status {
+	position: fixed;
+	left: 50%;
+	bottom: 104px;
+	transform: translate(-50%, 8px);
+	z-index: 6;
+	font-size: 11.5px;
+	letter-spacing: .06em;
+	color: var(--ink-2);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+	text-align: center;
+	white-space: nowrap;
+}
+
+.status.on { opacity: 1; transform: translate(-50%, 0); }
+.status b { color: var(--accent); font-weight: 500; }
+.status-gear {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	margin: 0 2px -1px;
+	vertical-align: baseline;
+	opacity: .85;
+}
+
+/* ─────────────────────────────────────────────── finish actions */
+
+/* No card: the landing keeps its own frame. The actions take the middle of the
+   readout line, between the name at the left and the altitude at the right,
+   and carry no chrome of their own — only type.
+   Full width and centred rather than anchored at 50%: a fixed box with only
+   `left` set can never grow past half the viewport, and would wrap on a phone
+   long before it had to. */
+.finish {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: var(--hud-bottom);
+	z-index: 7;
+	display: flex;
+	justify-content: center;
+	align-items: baseline;
+	gap: 30px;
+	text-shadow: var(--shade);
+	pointer-events: none;
+	opacity: 0;
+	/* the buttons stay hit-testable through `#ui button` even at opacity 0 —
+	   visibility takes the whole row out of hit-testing */
+	visibility: hidden;
+	transform: translateY(8px);
+	transition: opacity 600ms var(--ease), transform 600ms var(--ease), visibility 600ms,
+		bottom 900ms cubic-bezier(.16, 1, .3, 1);
+}
+
+body.state-done.show-finish .finish,
+body.state-free.show-finish .finish { opacity: 1; visibility: visible; transform: none; }
+
+.finish button {
+	position: relative;
+	padding: 0 0 7px;
+	border: 0;
+	background: none;
+	color: rgba(255, 255, 255, .55);
+	font: inherit;
+	font-size: 10.5px;
+	letter-spacing: .17em;
+	text-transform: uppercase;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: color 260ms var(--ease);
+}
+
+.finish button:hover,
+.finish button:focus-visible { color: var(--ink); }
+
+.finish .save { color: var(--accent); }
+.finish .save[hidden] { display: none; }
+
+/* they arrive one after another, left to right, like the rule under them */
+body.state-done.show-finish .finish button,
+body.state-free.show-finish .finish button { animation: rise 620ms var(--ease) both; }
+
+.finish button:nth-child(2) { animation-delay: 90ms; }
+.finish button:nth-child(3) { animation-delay: 180ms; }
+
+@keyframes rise {
+	from { opacity: 0; transform: translateY(7px); }
+}
+
+/* ─────────────────────────────────────────────── help */
+
+.help {
+	position: fixed;
+	inset: 0;
+	z-index: 10;
+	display: grid;
+	place-items: center;
+	background: rgba(0, 0, 0, .55);
+	backdrop-filter: blur(6px);
+	-webkit-backdrop-filter: blur(6px);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--t) var(--ease);
+}
+
+body.show-help .help { opacity: 1; pointer-events: auto; }
+
+.help-card {
+	max-width: 400px;
+	padding: 24px 26px;
+	border-radius: var(--r);
+	background: var(--glass-solid);
+	border: 1px solid var(--hair);
+}
+
+.help-card h3 { margin: 0 0 16px; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.help-card dl { display: grid; grid-template-columns: auto 1fr; gap: 9px 20px; margin: 0; font-size: 12.5px; }
+.help-card dt { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; white-space: nowrap; }
+.help-card dd { margin: 0; color: var(--ink-2); }
+.help-card p { margin: 18px 0 0; font-size: 11.5px; color: var(--ink-3); }
+
+/* ─────────────────────────────────────────────── boot / wait */
+
+.boot {
+	position: fixed;
+	inset: 0;
+	z-index: 20;
+	display: grid;
+	place-items: center;
+	background: #000;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 900ms var(--ease);
+}
+
+body.state-boot .boot {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+/* Same mark over the live globe for ground probes, settle, and cache warm-up.
+   Transparent so the tiles keep reading as progress; pointer-events stay off so
+   Abort on the bar remains reachable. */
+body.is-waiting .boot {
+	opacity: 1;
+	background: transparent;
+}
+
+.boot-inner { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+
+/* the loader is the same stroke the buttons draw, left to right and out to the
+   right, on a loop — the interface introducing its own grammar before anything
+   is on screen to use it */
+.boot-line {
+	position: relative;
+	width: 190px;
+	height: 1px;
+	background: rgba(255, 255, 255, .09);
+}
+
+.boot-line::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: var(--accent);
+	animation: draw 2.1s cubic-bezier(.65, 0, .35, 1) infinite;
+}
+
+@keyframes draw {
+	0% { transform: scaleX(0); transform-origin: 0 50%; }
+	45% { transform: scaleX(1); transform-origin: 0 50%; }
+	55% { transform: scaleX(1); transform-origin: 100% 50%; }
+	100% { transform: scaleX(0); transform-origin: 100% 50%; }
+}
+
+.boot-text {
+	font-size: 10.5px;
+	letter-spacing: .2em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	transition: opacity 300ms var(--ease);
+}
+
+body.is-waiting .boot-text { text-shadow: var(--shade); }
+
+/* ─────────────────────────────────────────────── state visibility */
+
+body.state-flying .bar,
+body.state-done .bar,
+body.state-free .bar {
+	opacity: 0;
+	transform: translateY(20px);
+	visibility: hidden;
+	pointer-events: none;
+}
+
+/* Loading keeps the bar so Abort stays reachable while ground/settle runs. */
+body.state-loading .bar .opt:not(.go) {
+	opacity: 0.35;
+	pointer-events: none;
+}
+
+body.state-loading .rec-btn {
+	opacity: 0.35;
+	pointer-events: none;
+}
+
+/* the export writes the canvas, not the page — but the rate that matters
+   during a capture is the recorder's, and the pill already carries it */
+body.is-capturing .fps,
+body.state-boot .fps { opacity: 0; }
+
+body.state-flying .brand,
+body.state-free .brand,
+body.state-done .brand { opacity: 0; visibility: hidden; transform: translateY(-10px); }
+
+body.state-flying .corner,
+body.state-free .corner { opacity: 0; visibility: hidden; pointer-events: none; }
+
+body.state-flying .settings,
+body.state-flying .places,
+body.state-flying .shots,
+body.state-loading .places,
+body.state-loading .shots { opacity: 0; visibility: hidden; pointer-events: none; }
+
+/* setup is answered over the globe: the title and the planet are all that is
+   behind the card. The controls it gates would only read as an interface that
+   ignores you — they are inert while it is up — and the boot line is the same
+   wait the card is already explaining. */
+body.keyprompt-open .bar,
+body.keyprompt-open .corner,
+body.keyprompt-open .fps,
+body.keyprompt-open .status,
+body.keyprompt-open .boot { opacity: 0; visibility: hidden; }
+
+/* over the scrim rather than under it, or the blur takes the title with it */
+body.keyprompt-open .brand { z-index: 31; }
+
+/* …but the card wins where it is tall enough to reach the title: on a phone it
+   starts at the top edge, and on a short window the centred card climbs into
+   it. Its own heading carries the moment there. */
+@media (max-width: 860px), (max-height: 740px) {
+	body.keyprompt-open .brand { opacity: 0; visibility: hidden; }
+}
+
+body.ui-hidden #ui > *:not(.matte):not(.rec-frame):not(.rec-pill) {
+	opacity: 0 !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+
+body.state-flying { cursor: none; }
+
+@media (prefers-reduced-motion: reduce) {
+	.picker-backdrop, .brand, .corner, .fps, .bar, .opt, .opt-caret, .rule::after, .places, .shots, .settings,
+	.status, .finish, .help, .boot, .matte, .shot-readout, .shot-alt, .rec-pill,
+	.keybar::after, .keyfield {
+		transition-duration: 1ms !important;
+	}
+	.opt-value.step { animation: none; }
+	.finish button { animation: none !important; }
+	.keyprompt-card, .keystep, .keystep > * { animation: none !important; }
+	/* the label already says "Checking…"; the ring is the decorative half */
+	.keygo i { animation: none; }
+	/* the loop becomes a plain held line rather than a stroke that never lands */
+	.boot-line::after { animation: none; transform: scaleX(1); }
+}
+
+/* ─────────────────────────────────────────────── small screens */
+
+@media (max-width: 860px) {
+	/* Token setup owns the first mobile screen. Starting at the safe-area edge
+	   keeps it ahead of the control stack even on short phones. */
+	.keyprompt {
+		place-items: start center;
+		padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px));
+	}
+	.keyprompt-card {
+		width: 100%;
+		max-height: calc(100vh - 24px);
+		max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+		border-radius: 16px;
+	}
+	.keyhead { padding: 16px 18px 0; }
+	.keybody { padding: 16px 18px 18px; }
+	.keyfoot { padding: 12px 18px 16px; }
+	.keystep h2 { font-size: 22px; }
+	.keystep-sub { font-size: 12.5px; }
+	.keyalt { font-size: 9.5px; }
+	.picker-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 1;
+		display: block;
+		padding: 0;
+		border: 0;
+		background: rgba(0, 0, 0, .62);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition: opacity 220ms var(--ease), visibility 280ms;
+	}
+	body.places-open .picker-backdrop,
+	body.shots-open .picker-backdrop {
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+	}
+	.brand { top: 18px; }
+	.brand h1 { font-size: 13px; letter-spacing: .2em; }
+	/* the credit line folds to two or three rows rather than running to the bezels */
+	.brand p { font-size: 8.5px; letter-spacing: .08em; line-height: 1.8; max-width: 76vw; margin-inline: auto; }
+	/* machine meter sits clear of the left control stack */
+	.fps {
+		top: auto;
+		left: auto;
+		right: 18px;
+		bottom: max(20px, env(safe-area-inset-bottom, 0px));
+	}
+	/* github / help / settings as a short column, not a row into the title */
+	.corner {
+		top: 16px;
+		right: 14px;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+	}
+	#btn-help svg { display: none; }
+	#btn-help .icon-glyph { display: block; }
+	/* place → shot → light → length → start, reading down the left edge */
+	.bar {
+		flex-direction: column;
+		flex-wrap: nowrap;
+		align-items: flex-start;
+		justify-content: flex-end;
+		left: 0;
+		right: auto;
+		bottom: max(20px, env(safe-area-inset-bottom, 0px));
+		gap: 12px;
+		padding: 0 16px;
+		width: auto;
+		max-width: min(240px, calc(100vw - 72px));
+	}
+	.opt, .opt-wrap { min-width: 0; flex: none; width: 100%; }
+	.opt-wrap > .opt { flex: none; width: 100%; min-width: 0; }
+	#opt-place, #opt-shot, #opt-light, #opt-length { min-width: 0; }
+	.bar-sep,
+	.rec-btn { display: none; }
+	/* phones are not the capture surface — hide the whole recording block */
+	.adv-group:has( #rec-res ) { display: none; }
+	.go { flex: none; margin-top: 4px; }
+	.places,
+	.shots {
+		position: fixed;
+		top: 50%;
+		left: 50%;
+		bottom: auto;
+		width: min(420px, calc(100vw - 28px));
+		max-height: min(680px, calc(100vh - 32px));
+		max-height: min(680px, calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+		margin-left: 0;
+		border: 1px solid rgba(255, 255, 255, .14);
+		border-radius: var(--r);
+		box-shadow: 0 28px 80px -20px rgba(0, 0, 0, .88);
+		transform: translate(-50%, calc(-50% + 12px)) scale(.985);
+		transform-origin: 50% 50%;
+		z-index: 2;
+	}
+	.shots { width: min(380px, calc(100vw - 28px)); }
+	body.places-open .places,
+	body.shots-open .shots { transform: translate(-50%, -50%) scale(1); }
+	.picker-head { padding: 13px 10px 11px 16px; }
+	.picker-close {
+		width: 44px;
+		height: 44px;
+		margin: -10px -4px -8px 0;
+		display: grid;
+		place-items: center;
+		border: 0;
+		background: none;
+		color: var(--ink-3);
+		cursor: pointer;
+	}
+	.picker-close svg { width: 16px; height: 16px; }
+	.picker-close:hover,
+	.picker-close:focus-visible { color: var(--ink); outline: none; }
+	.places-list,
+	.shots-list {
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+	}
+	.settings {
+		top: 118px;
+		right: 14px;
+		width: min(320px, calc(100vw - 28px));
+		max-height: calc(100vh - 140px);
+	}
+	.shot-readout { left: 18px; }
+	.shot-alt { right: 18px; }
+	.finish { gap: 20px; }
+	.finish button { font-size: 9.5px; letter-spacing: .13em; }
+}
+
+/* narrow enough that the middle would run into the two corners: the actions
+   step up onto their own line instead */
+@media (max-width: 700px) {
+	.finish {
+		bottom: calc(var(--hud-bottom) + 62px);
+		gap: 8px 16px;
+		padding: 0 16px;
+		flex-wrap: wrap;
+	}
+}
+
+/* ─────────────────────────────────────────── the pin over a landing */
+
+/* Driven by Venue.js. The conference entry wears a `featured` block — its own
+   mark in the place list, and a three-line card over the venue. A custom target
+   from a map link or typed coordinate gets the same stem with only the lat/lon
+   (`.venue.is-coords`). */
+
+:root {
+	--conf: #fe95fd;
+	--conf-ink: #ffc9fe;
+}
+
+/* ── the row */
+
+.place-featured {
+	position: relative;
+	grid-template-columns: 84px minmax(0, 1fr) auto;
+	margin-bottom: 14px;
+	padding-top: 12px;
+	padding-bottom: 12px;
+}
+
+/* One short rule carries the event colour without turning the whole left edge
+	into a badge. The row remains part of the same list and keeps its sharp grid. */
+.place-featured::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 20px;
+	height: 1px;
+	background: rgba(254, 149, 253, .5);
+}
+
+/* it is the head of the list, not a member of it */
+.place-featured::after {
+	content: '';
+	position: absolute;
+	left: 12px;
+	right: 12px;
+	bottom: -8px;
+	height: 1px;
+	background: rgba(255, 255, 255, .08);
+}
+
+/* The wordmark stands in for the emoji and the name together — it already says
+   "THREE CONF.JS", and setting that twice would read as a mistake. White on
+   transparent, so it needs no plate of its own. Type and badge are separate
+   layers so a hover can blacken THREE CON and leave the pink .js alone. */
+.place-logo {
+	position: relative;
+	display: block;
+	width: 84px;
+}
+
+.place-logo img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.place-logo-type {
+	transition: filter .22s var(--ease);
+}
+
+.place-logo-badge {
+	position: absolute;
+	inset: 0;
+}
+
+.place-featured:hover .place-logo-type,
+.place-featured.cursor .place-logo-type,
+.place-featured:focus-visible .place-logo-type { filter: brightness( 0 ); }
+
+/* what is left to say once the wordmark has said the name: when, then where */
+.place-featured b {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: .13em;
+	text-transform: uppercase;
+	color: rgba(255, 201, 254, .78);
+}
+
+/* clipped rather than wrapped: another line here would set this row taller
+   again, and it is already the tallest in the list */
+.place-featured b,
+.place-featured b small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.place-featured b small {
+	font-size: 9px;
+	font-weight: 400;
+	letter-spacing: .11em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.place-featured i { color: var(--ink-3); }
+
+.place-featured:hover b,
+.place-featured.cursor b,
+.place-featured:focus-visible b,
+.place-featured:hover b small,
+.place-featured.cursor b small,
+.place-featured:focus-visible b small,
+.place-featured:hover i,
+.place-featured.cursor i,
+.place-featured:focus-visible i { color: #0b0d11; }
+
+.place.place-featured[aria-pressed="true"] b { color: var(--ink); }
+
+.place.place-featured[aria-pressed="true"]:hover b,
+.place.place-featured[aria-pressed="true"]:focus-visible b,
+.place.place-featured[aria-pressed="true"]:hover b small,
+.place.place-featured[aria-pressed="true"]:focus-visible b small { color: #0b0d11; }
+
+/* ── the card */
+
+/* Anchored to the planet rather than to the frame. `.venue` is a zero-size point
+   the loop drives to the projected position of the subject; the pin hangs off
+   its bottom edge, so the tip of the stem lands on the building and the type
+   floats clear above it. No panel, like everything else that sits on the image —
+   it carries its own separation in --shade. */
+.venue {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 0;
+	height: 0;
+	z-index: 6;
+	visibility: hidden;
+	will-change: transform;
+}
+
+body.has-venue.state-done .venue.on,
+body.has-venue.state-free .venue.on { visibility: visible; }
+
+.venue-pin {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	text-decoration: none;
+	color: var(--ink);
+	/* the rest of the interface sits over sky or over the matte; this one lands
+	   on sunlit rooftops, which are bright, busy and never the same twice — so
+	   the type carries a tight shadow for the edges and a wide one for the mass
+	   behind it, rather than the single soft --shade everything else uses */
+	text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 1px 20px rgba(0, 0, 0, .75);
+	/* the anchor it hangs from is a zero-width box, which is the whole width an
+	   absolutely positioned child gets to shrink-to-fit against — without this
+	   every line wraps to one word */
+	white-space: nowrap;
+	opacity: 0;
+	transform: translateX(-50%) translateY(10px);
+	/* held back a beat: the flight ends with the camera still settling, and a
+	   card that arrives on the same frame reads as part of the interface rather
+	   than as something that was already waiting at the destination */
+	transition: opacity 800ms var(--ease) 700ms, transform 800ms var(--ease) 700ms;
+}
+
+body.has-venue.state-done .venue.on .venue-pin,
+body.has-venue.state-free .venue.on .venue-pin { opacity: 1; transform: translateX(-50%); }
+
+.venue-lines {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	padding-bottom: 12px;
+}
+
+/* Still no panel: a shadow rather than a shape. The card lands on sunlit roofs
+   — bright, and busy at exactly the frequency of the type — so the three lines
+   get a ground of their own, drawn as a gradient with no edge anywhere on it.
+   A backdrop-filter would suit the job better and was tried first; Chrome
+   leaves the filtered region's box visible through the mask. */
+.venue-lines::before {
+	content: '';
+	position: absolute;
+	inset: -30px -52px -10px;
+	z-index: -1;
+	pointer-events: none;
+	background: radial-gradient(closest-side ellipse at 50% 50%,
+		rgba(0, 0, 0, .52) 0%, rgba(0, 0, 0, .44) 40%, rgba(0, 0, 0, .2) 72%, rgba(0, 0, 0, 0) 100%);
+}
+
+.venue-title {
+	font-size: 17px;
+	font-weight: 500;
+	letter-spacing: .1em;
+	text-transform: uppercase;
+}
+
+.venue-when {
+	font-style: normal;
+	font-size: 10px;
+	letter-spacing: .22em;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, .84);
+}
+
+.venue-link {
+	position: relative;
+	font-style: normal;
+	font-size: 11.5px;
+	letter-spacing: .06em;
+	padding-bottom: 4px;
+	color: var(--conf-ink);
+}
+
+/* the same stroke as the bar and the finish actions, but drawn from the whole
+   pin: the link is the last of three lines, and all three are one target */
+.venue-pin:hover .venue-link::after,
+.venue-pin:focus-visible .venue-link::after { transform: scaleX(1); transform-origin: 0 50%; }
+
+/* the stem, and the dot that actually sits on the building */
+.venue-stem {
+	position: relative;
+	width: 1px;
+	height: 44px;
+	background: linear-gradient(to bottom, rgba(254, 149, 253, 0), var(--conf));
+}
+
+.venue-stem::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	bottom: -3.5px;
+	width: 7px;
+	height: 7px;
+	margin-left: -3.5px;
+	border-radius: 50%;
+	background: var(--conf);
+	animation: venue-pulse 2.8s var(--ease) infinite;
+}
+
+@keyframes venue-pulse {
+	0%, 100% { box-shadow: 0 0 0 2px rgba(254, 149, 253, .28), 0 0 12px 1px var(--conf); }
+	50% { box-shadow: 0 0 0 7px rgba(254, 149, 253, 0), 0 0 18px 2px var(--conf); }
+}
+
+/* Custom place: same stem geometry, no conference colour — the pink is the
+   event's own mark, and a pasted pin is just a point on the map. */
+.venue.is-coords .venue-title {
+	font-size: 13px;
+	letter-spacing: .14em;
+	font-variant-numeric: tabular-nums;
+}
+
+.venue.is-coords .venue-lines {
+	gap: 0;
+	padding-bottom: 10px;
+}
+
+.venue.is-coords .venue-stem {
+	background: linear-gradient(to bottom, rgba(243, 245, 248, 0), var(--ink));
+}
+
+.venue.is-coords .venue-stem::after {
+	background: var(--ink);
+	animation-name: venue-pulse-coords;
+}
+
+@keyframes venue-pulse-coords {
+	0%, 100% { box-shadow: 0 0 0 2px rgba(243, 245, 248, .28), 0 0 12px 1px rgba(243, 245, 248, .55); }
+	50% { box-shadow: 0 0 0 7px rgba(243, 245, 248, 0), 0 0 18px 2px rgba(243, 245, 248, .4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.venue-pin { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+	.venue-stem::after { animation: none; }
+}
+
+@media (max-width: 860px) {
+	.venue-title { font-size: 14.5px; letter-spacing: .08em; }
+	.venue.is-coords .venue-title { font-size: 12px; letter-spacing: .12em; }
+	.venue-when { font-size: 9.5px; letter-spacing: .18em; }
+	.venue-stem { height: 34px; }
+	.venue-lines::before { inset: -24px -34px -8px; }
+}
